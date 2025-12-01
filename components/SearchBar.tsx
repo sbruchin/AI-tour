@@ -27,6 +27,10 @@ interface SearchBarProps {
   isLoading: boolean;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  startDate: string;
+  setStartDate: (date: string) => void;
+  endDate: string;
+  setEndDate: (date: string) => void;
 }
 
 const RANDOM_DESTINATIONS = [
@@ -51,13 +55,44 @@ const SearchBar: React.FC<SearchBarProps> = ({
   isPackLight, setIsPackLight,
   onGenerate, onStop, isLoading,
   isCollapsed = false,
-  onToggleCollapse
+  onToggleCollapse,
+  startDate, setStartDate,
+  endDate, setEndDate
 }) => {
   
   // Double enter logic state
   const [enterPressCount, setEnterPressCount] = useState(0);
   const enterTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showEnterHint, setShowEnterHint] = useState(false);
+
+  // Date Change Handlers
+  const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newStart = e.target.value;
+    setStartDate(newStart);
+    
+    // Automatically adjust end date if it's before new start date
+    if (endDate && new Date(newStart) >= new Date(endDate)) {
+       const d = new Date(newStart);
+       d.setDate(d.getDate() + 1);
+       setEndDate(d.toISOString().split('T')[0]);
+    }
+  };
+
+  const handleEndDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      setEndDate(e.target.value);
+  };
+  
+  // Calculate nights whenever start or end date changes
+  useEffect(() => {
+      if (startDate && endDate) {
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          const diffTime = Math.abs(end.getTime() - start.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+          // Ensure at least 1 night
+          setNights(diffDays > 0 ? diffDays : 1);
+      }
+  }, [startDate, endDate, setNights]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !isLoading) {
@@ -96,14 +131,23 @@ const SearchBar: React.FC<SearchBarProps> = ({
   const handleReset = useCallback(() => {
     setOrigin('');
     setDestination('');
+    // Reset dates to tomorrow -> day after tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayAfter = new Date();
+    dayAfter.setDate(dayAfter.getDate() + 3); // Default 2 nights
+
+    setStartDate(tomorrow.toISOString().split('T')[0]);
+    setEndDate(dayAfter.toISOString().split('T')[0]);
     setNights(2);
+
     setDepartureTime('');
     setTransportation('');
     setBudget('');
     setWishlistPlaces('');
     setInterests('');
     setIsPackLight(false);
-  }, [setOrigin, setDestination, setNights, setDepartureTime, setTransportation, setBudget, setWishlistPlaces, setInterests, setIsPackLight]);
+  }, [setOrigin, setDestination, setStartDate, setEndDate, setNights, setDepartureTime, setTransportation, setBudget, setWishlistPlaces, setInterests, setIsPackLight]);
 
   // Transportation Dropdown State
   const [isTransportOpen, setIsTransportOpen] = useState(false);
@@ -243,13 +287,44 @@ const SearchBar: React.FC<SearchBarProps> = ({
                 />
             </div>
             
-            {/* Nights Input */}
-            <div className="relative w-full">
-                 <svg className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+            {/* Date Range Selection (Nights Calculation) */}
+            <div className="flex gap-2 w-full">
+                {/* Start Date */}
+                <div className="relative w-1/2">
+                    <input 
+                      type="date" 
+                      value={startDate} 
+                      onChange={handleStartDateChange}
+                      min={new Date().toISOString().split('T')[0]}
+                      className="w-full h-12 pl-3 pr-2 text-sm sm:text-base bg-slate-100 border-transparent focus:ring-2 focus:ring-blue-500 focus:border-transparent rounded-lg text-slate-700 transition" 
+                      disabled={isLoading}
+                      title={t.startDate}
+                    />
+                    <label className="absolute -top-1.5 left-2 bg-slate-100 px-1 text-[10px] text-slate-500 rounded">{t.startDate}</label>
+                </div>
+                
+                {/* End Date */}
+                 <div className="relative w-1/2">
+                    <input 
+                      type="date" 
+                      value={endDate} 
+                      onChange={handleEndDateChange}
+                      min={startDate}
+                      className="w-full h-12 pl-3 pr-2 text-sm sm:text-base bg-slate-100 border-transparent focus:ring-2 focus:ring-blue-500 focus:border-transparent rounded-lg text-slate-700 transition" 
+                      disabled={isLoading}
+                      title={t.endDate}
+                    />
+                    <label className="absolute -top-1.5 left-2 bg-slate-100 px-1 text-[10px] text-slate-500 rounded">{t.endDate}</label>
+                </div>
+            </div>
+
+            {/* Read-only Nights Display (for clarity) */}
+            <div className="relative w-full flex items-center bg-slate-50 rounded-lg px-4 border border-slate-200 text-slate-500 select-none">
+                 <svg className="h-5 w-5 text-slate-400 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
                 </svg>
-                <input type="number" value={nights} onChange={(e) => setNights(parseInt(e.target.value, 10) || 1)} min="1" onKeyDown={handleKeyDown} placeholder={t.nights} className={`${inputBaseClasses} pr-12`} disabled={isLoading} />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500">{t.nightsSuffix}</span>
+                <span className="text-lg font-bold text-slate-800">{nights}</span>
+                <span className="ml-1 text-sm">{t.nightsSuffix}</span>
             </div>
 
             {/* Transportation Input (Dropdown) */}

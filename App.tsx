@@ -26,11 +26,22 @@ const App: React.FC = () => {
       return date.toISOString().split('T')[0];
   };
 
+  // Helper to get date after N days
+  const getDateAfterDays = (startDateStr: string, days: number) => {
+     const date = new Date(startDateStr);
+     date.setDate(date.getDate() + days);
+     return date.toISOString().split('T')[0];
+  };
+
   const [origin, setOrigin] = useState<string>('');
   const [destination, setDestination] = useState<string>('');
   const [nights, setNights] = useState<number>(2);
   const [departureTime, setDepartureTime] = useState<string>('');
+  
+  // Date State
   const [startDate, setStartDate] = useState<string>(getTomorrow());
+  const [endDate, setEndDate] = useState<string>(getDateAfterDays(getTomorrow(), 2));
+
   const [transportation, setTransportation] = useState<string>('');
   const [budget, setBudget] = useState<string>('');
   const [wishlistPlaces, setWishlistPlaces] = useState<string>('');
@@ -42,6 +53,7 @@ const App: React.FC = () => {
   
   const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [progress, setProgress] = useState<number>(0); // 0-100
   const [error, setError] = useState<string | null>(null);
 
   const [isSearchCollapsed, setIsSearchCollapsed] = useState<boolean>(false);
@@ -52,6 +64,7 @@ const App: React.FC = () => {
 
   // Abort Control
   const abortControllerRef = useRef<AbortController | null>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load History from LocalStorage
   useEffect(() => {
@@ -137,10 +150,38 @@ const App: React.FC = () => {
     }
   };
 
+  const startProgressSimulator = () => {
+    setProgress(0);
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    
+    // Simulate progress up to 95% (leaving the last 5% for actual completion)
+    progressIntervalRef.current = setInterval(() => {
+      setProgress(prev => {
+        if (prev >= 95) return prev;
+        
+        // Use a decelerating curve: moves fast initially, then slows down
+        // Calculate remaining distance to 95
+        const remaining = 95 - prev;
+        // Move a fraction of the remaining distance, but ensure minimum speed
+        const increment = Math.max(0.1, remaining * 0.05);
+        
+        return prev + increment;
+      });
+    }, 100); // Update every 100ms for smoothness
+  };
+
+  const stopProgressSimulator = () => {
+      if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+      }
+  };
+
   const handleGenerate = async () => {
      if (!origin || !destination) return;
      
      setIsLoading(true);
+     startProgressSimulator();
      setError(null);
      setTravelPlans(null);
      setGeneratedImages({});
@@ -159,6 +200,13 @@ const App: React.FC = () => {
          );
 
          if (abortControllerRef.current.signal.aborted) return;
+         
+         // Stop simulator and force to 100%
+         stopProgressSimulator();
+         setProgress(100);
+
+         // Crucial: Wait a bit to let the user see 100% completion before switching
+         await new Promise(resolve => setTimeout(resolve, 800));
 
          setTravelPlans(plans);
          
@@ -180,9 +228,11 @@ const App: React.FC = () => {
          if (abortControllerRef.current.signal.aborted) return;
          setError(t.chatError); // Using general error message
          setIsSearchCollapsed(false);
+         stopProgressSimulator();
      } finally {
          if (!abortControllerRef.current.signal.aborted) {
              setIsLoading(false);
+             stopProgressSimulator();
          }
      }
   };
@@ -191,6 +241,7 @@ const App: React.FC = () => {
       if (abortControllerRef.current) {
           abortControllerRef.current.abort();
           setIsLoading(false);
+          stopProgressSimulator();
           setError("Generation stopped by user.");
       }
   };
@@ -213,6 +264,7 @@ const App: React.FC = () => {
       const currentPlan = travelPlans[activePlanIndex];
       
       setIsLoading(true);
+      startProgressSimulator();
       
        // Setup AbortController
       if (abortControllerRef.current) {
@@ -234,6 +286,13 @@ const App: React.FC = () => {
           const newPlan = await regenerateTravelPlan(currentPlan, likedPlaces, wishlistPlaces, interests, language);
           
           if (abortControllerRef.current.signal.aborted) return;
+          
+          // Stop simulator and force to 100%
+          stopProgressSimulator();
+          setProgress(100);
+
+          // Wait for user to see 100%
+          await new Promise(resolve => setTimeout(resolve, 800));
 
           const updatedPlans = [...travelPlans];
           updatedPlans[activePlanIndex] = newPlan;
@@ -245,9 +304,11 @@ const App: React.FC = () => {
       } catch (e) {
           console.error(e);
           setError(t.chatError);
+          stopProgressSimulator();
       } finally {
           if (!abortControllerRef.current.signal.aborted) {
              setIsLoading(false);
+             stopProgressSimulator();
          }
       }
   };
@@ -257,7 +318,8 @@ const App: React.FC = () => {
       const currentPlan = travelPlans[activePlanIndex];
       
       setIsLoading(true);
-      // Re-generate with selected hotel logic
+      startProgressSimulator();
+
        try {
           // Collect liked places
           const likedPlaces: string[] = [];
@@ -271,6 +333,13 @@ const App: React.FC = () => {
 
           const newPlan = await regenerateTravelPlan(currentPlan, likedPlaces, wishlistPlaces, interests, language, hotelName);
           
+          // Stop simulator and force to 100%
+          stopProgressSimulator();
+          setProgress(100);
+
+          // Wait for user to see 100%
+          await new Promise(resolve => setTimeout(resolve, 800));
+
           const updatedPlans = [...travelPlans];
           updatedPlans[activePlanIndex] = newPlan;
           setTravelPlans(updatedPlans);
@@ -281,8 +350,10 @@ const App: React.FC = () => {
       } catch (e) {
           console.error(e);
           setError(t.chatError);
+          stopProgressSimulator();
       } finally {
          setIsLoading(false);
+         stopProgressSimulator();
       }
   };
 
@@ -296,7 +367,11 @@ const App: React.FC = () => {
       setWishlistPlaces(item.inputs.wishlistPlaces);
       setInterests(item.inputs.interests);
       setIsPackLight(!!item.inputs.isPackLight);
-      setStartDate(item.inputs.startDate || getTomorrow());
+      
+      // Restore dates logic
+      const storedStart = item.inputs.startDate || getTomorrow();
+      setStartDate(storedStart);
+      setEndDate(getDateAfterDays(storedStart, item.inputs.nights || 1));
       
       setTravelPlans(item.plans);
       setIsHistoryOpen(false);
@@ -331,6 +406,8 @@ const App: React.FC = () => {
              isLoading={isLoading}
              isCollapsed={isSearchCollapsed}
              onToggleCollapse={() => setIsSearchCollapsed(!isSearchCollapsed)}
+             startDate={startDate} setStartDate={setStartDate}
+             endDate={endDate} setEndDate={setEndDate}
            />
 
            {error && (
@@ -340,7 +417,7 @@ const App: React.FC = () => {
                </div>
            )}
 
-           {isLoading && <LoadingSpinner t={t} />}
+           {isLoading && <LoadingSpinner t={t} progress={progress} />}
 
            {!isLoading && travelPlans && travelPlans.length > 0 && (
                <div className="mt-8">
